@@ -6,6 +6,7 @@ import datetime
 import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import curses
+import time
 
 DATA_FILE = "timetracker.json"
 
@@ -30,42 +31,45 @@ def save_data(data):
 
 
 def now():
-    return datetime.datetime.now().isoformat()
+    return datetime.datetime.now()
 
 
 # ----------------------
 # Core Logic
 # ----------------------
 
-def is_running(data):
-    return any(s.get("end") is None for s in data["sessions"])
+def get_active_session(data):
+    for s in reversed(data["sessions"]):
+        if s.get("end") is None:
+            return s
+    return None
 
 
 def start_session():
     data = load_data()
-    if is_running(data):
+    if get_active_session(data):
         return "Already running"
 
-    data["sessions"].append({"start": now(), "end": None})
+    data["sessions"].append({"start": now().isoformat(), "end": None})
     save_data(data)
     return "Started"
 
 
 def stop_session():
     data = load_data()
+    session = get_active_session(data)
 
-    for s in reversed(data["sessions"]):
-        if s.get("end") is None:
-            s["end"] = now()
-            save_data(data)
-            return "Stopped"
+    if session:
+        session["end"] = now().isoformat()
+        save_data(data)
+        return "Stopped"
 
     return "No active session"
 
 
 def add_time(minutes):
     data = load_data()
-    end = datetime.datetime.now()
+    end = now()
     start = end - datetime.timedelta(minutes=minutes)
 
     data["sessions"].append({
@@ -79,7 +83,7 @@ def add_time(minutes):
 
 def calculate_summary(period="day"):
     data = load_data()
-    now_dt = datetime.datetime.now()
+    now_dt = now()
 
     total = datetime.timedelta()
 
@@ -99,43 +103,94 @@ def calculate_summary(period="day"):
 
         total += (end - start)
 
-    return total.total_seconds() / 3600
+    return total
 
 
 # ----------------------
-# TUI (curses)
+# TUI
 # ----------------------
+
+def format_td(td):
+    seconds = int(td.total_seconds())
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02}:{m:02}:{s:02}"
+
 
 def tui(stdscr):
     curses.curs_set(0)
+    stdscr.nodelay(True)
+
+    input_mode = False
+    input_buffer = ""
 
     while True:
         stdscr.clear()
         data = load_data()
 
-        running = is_running(data)
+        active = get_active_session(data)
+
         day = calculate_summary("day")
         week = calculate_summary("week")
         month = calculate_summary("month")
 
-        stdscr.addstr(1, 2, "Minimal Time Tracker", curses.A_BOLD)
-        stdscr.addstr(3, 2, f"Status: {'RUNNING' if running else 'STOPPED'}")
+        # Header
+        stdscr.addstr(1, 2, "⏱ Minimal Time Tracker", curses.A_BOLD)
 
-        stdscr.addstr(5, 2, f"Today:  {day:.2f} h")
-        stdscr.addstr(6, 2, f"Week:   {week:.2f} h")
-        stdscr.addstr(7, 2, f"Month:  {month:.2f} h")
+        # Status
+        if active:
+            start = datetime.datetime.fromisoformat(active["start"])
+            running_for = now() - start
+            stdscr.addstr(3, 2, "Status: RUNNING", curses.A_BOLD)
+            stdscr.addstr(4, 4, f"Running: {format_td(running_for)}")
+        else:
+            stdscr.addstr(3, 2, "Status: STOPPED")
 
-        stdscr.addstr(9, 2, "Controls:")
-        stdscr.addstr(10, 4, "s = start")
-        stdscr.addstr(11, 4, "e = end/stop")
-        stdscr.addstr(12, 4, "a = add 30min")
-        stdscr.addstr(13, 4, "q = quit")
+        # Stats
+        stdscr.addstr(6, 2, f"Today : {format_td(day)}")
+        stdscr.addstr(7, 2, f"Week  : {format_td(week)}")
+        stdscr.addstr(8, 2, f"Month : {format_td(month)}")
 
-        stdscr.addstr(15, 2, f"Data file: {get_data_path()}")
+        # Controls
+        stdscr.addstr(10, 2, "Controls:")
+        stdscr.addstr(11, 4, "s = start   e = stop   a = add time")
+        stdscr.addstr(12, 4, "q = quit")
+
+        # Input mode
+        if input_mode:
+            stdscr.addstr(14, 2, f"Add minutes: {input_buffer}_")
+        else:
+            stdscr.addstr(14, 2, "Press 'a' to add custom minutes")
+
+        # File path
+        stdscr.addstr(16, 2, f"Data: {get_data_path()}")
 
         stdscr.refresh()
 
-        key = stdscr.getch()
+        try:
+            key = stdscr.getch()
+        except:
+            key = -1
+
+        if key == -1:
+            time.sleep(0.2)
+            continue
+
+        if input_mode:
+            if key in (10, 13):  # Enter
+                if input_buffer.isdigit():
+                    add_time(int(input_buffer))
+                input_buffer = ""
+                input_mode = False
+            elif key == 27:  # ESC
+                input_mode = False
+                input_buffer = ""
+            elif key in (8, 127):  # backspace
+                input_buffer = input_buffer[:-1]
+            elif chr(key).isdigit():
+                input_buffer += chr(key)
+            continue
 
         if key == ord('q'):
             break
@@ -144,18 +199,17 @@ def tui(stdscr):
         elif key == ord('e'):
             stop_session()
         elif key == ord('a'):
-            add_time(30)
+            input_mode = True
 
 
 # ----------------------
-# Simple API Server
+# API
 # ----------------------
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/sessions"):
-            data = load_data()
-            self._send_json(data)
+            self._send_json(load_data())
         else:
             self.send_response(404)
             self.end_headers()
@@ -189,7 +243,7 @@ def run_server(port=8000):
 # ----------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Minimal Work Time Tracker")
+    parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd")
 
     sub.add_parser("start")
@@ -214,11 +268,11 @@ def main():
     elif args.cmd == "add":
         print(add_time(args.minutes))
     elif args.cmd == "day":
-        print(calculate_summary("day"))
+        print(format_td(calculate_summary("day")))
     elif args.cmd == "week":
-        print(calculate_summary("week"))
+        print(format_td(calculate_summary("week")))
     elif args.cmd == "month":
-        print(calculate_summary("month"))
+        print(format_td(calculate_summary("month")))
     elif args.cmd == "serve":
         run_server()
     elif args.cmd == "tui":
