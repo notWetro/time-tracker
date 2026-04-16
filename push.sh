@@ -1,5 +1,5 @@
 #!/bin/bash
-python tracker.py readme
+python3 tracker.py readme
 git add README.md
 git add --all
 git commit -m 'updated worktime'
