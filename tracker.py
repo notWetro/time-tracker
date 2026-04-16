@@ -107,6 +107,56 @@ def calculate_summary(period="day"):
 
 
 # ----------------------
+# README update
+# ----------------------
+
+def generate_readme():
+    data = load_data()
+    monthly = {}
+
+    for s in data["sessions"]:
+        if not s.get("end"):
+            continue
+
+        start = datetime.datetime.fromisoformat(s["start"])
+        end = datetime.datetime.fromisoformat(s["end"])
+
+        key = start.strftime("%Y-%m")  # z.B. 2026-04
+        monthly.setdefault(key, datetime.timedelta())
+        monthly[key] += (end - start)
+
+    # sortieren
+    sorted_months = sorted(monthly.items())
+
+    lines = []
+    lines.append("# ⏱ Work Time Tracker\n")
+    lines.append("## 📊 Monthly Summary\n")
+
+    for month, td in sorted_months:
+        hours = td.total_seconds() / 3600
+        readable = datetime.datetime.strptime(month, "%Y-%m").strftime("%B %Y")
+        lines.append(f"- {readable}: {hours:.1f} hours")
+
+    # Mermaid Chart
+    lines.append("\n## 📈 Chart\n")
+    lines.append("```mermaid")
+    lines.append("pie")
+    lines.append("    title Work Time per Month")
+
+    for month, td in sorted_months:
+        hours = td.total_seconds() / 3600
+        label = datetime.datetime.strptime(month, "%Y-%m").strftime("%b %Y")
+        lines.append(f'    "{label}" : {hours:.1f}')
+
+    lines.append("```")
+
+    with open("README.md", "w") as f:
+        f.write("\n".join(lines))
+
+    print("README updated")
+
+
+# ----------------------
 # TUI
 # ----------------------
 
@@ -248,6 +298,7 @@ def main():
 
     sub.add_parser("start")
     sub.add_parser("stop")
+    sub.add_parser("readme")
 
     add_cmd = sub.add_parser("add")
     add_cmd.add_argument("minutes", type=int)
@@ -277,10 +328,11 @@ def main():
         run_server()
     elif args.cmd == "tui":
         curses.wrapper(tui)
+    elif args.cmd == "readme":
+        generate_readme()
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
     main()
-
