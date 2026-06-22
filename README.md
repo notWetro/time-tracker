@@ -3,7 +3,7 @@
 ## 📊 Monthly Summary
 
 - April 2026: 3.1 hours
-- June 2026: 1.5 hours
+- June 2026: 3.1 hours
 
 ## 📈 Chart
 
@@ -11,5 +11,5 @@
 pie
     title Work Time per Month
     "Apr 2026" : 3.1
-    "Jun 2026" : 1.5
+    "Jun 2026" : 3.1
 ```
