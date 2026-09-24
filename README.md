@@ -6,7 +6,7 @@
 - June 2026: 6.0 hours
 - July 2026: 7.5 hours
 - August 2026: 4.8 hours
-- September 2026: 1.2 hours
+- September 2026: 1.7 hours
 
 ## 📈 Chart
 
@@ -17,5 +17,5 @@ pie
     "Jun 2026" : 6.0
     "Jul 2026" : 7.5
     "Aug 2026" : 4.8
-    "Sep 2026" : 1.2
+    "Sep 2026" : 1.7
 ```
